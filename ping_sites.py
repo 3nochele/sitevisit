@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 SITES_FILE = 'sites.txt'
 SUMMARY_REPORT = 'report.csv'
 PROBLEM_REPORT = 'detailed_status.csv'
-MAX_WORKERS = 5 
+MAX_WORKERS = 3 
 
 SUB_PAGES = ['', '/about-us', '/contact-us']
 
