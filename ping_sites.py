@@ -41,18 +41,21 @@ def ping_url(original_url):
     try:
         response = requests.get(target_url, headers=headers, timeout=20, allow_redirects=True)
         final_url = response.url.lower()
+        page_content = response.text.lower() # পেজের ভেতরের HTML লেখা পড়া
         
-        # রিডাইরেক্ট চেক করার লজিক (HTTP থেকে HTTPS বা ডব্লিউডব্লিউডব্লিউ বাদে বড় পরিবর্তন খুঁজবে)
         history = response.history
         redirected = len(history) > 0
         
-        # সাসপেন্ডেড কি না চেক
-        if redirected and ("suspended" in final_url or "limit" in final_url or "notify" in final_url):
+        # ১. URL অথবা পেজের ভেতরের টেক্সটে Suspended নোটিশ আছে কি না চেক
+        if "suspended" in final_url or "limit" in final_url or "notify" in final_url or "suspended" in page_content or "account has been suspended" in page_content:
             return original_url, response.status_code, "Suspended", response.url
+            
+        # ২. ফ্রি হোস্টের (InfinityFree/iFastNet) ফেক সাকসেস বা হোল্ডিং পেজ চেক
+        elif "infinityfree" in page_content or "ifastnet" in page_content or "__test" in page_content or "checking your browser" in page_content:
+            return original_url, response.status_code, "Host_Error/Suspended", response.url
         
-        # যদি সাকসেসফুল হয় (Status 200) কিন্তু রিডাইরেক্ট হয়ে অন্য ডোমেইনে চলে যায়
+        # ৩. যদি সাকসেসফুল হয় (Status 200) কিন্তু রিডাইরেক্ট হয়ে অন্য ডোমেইনে চলে যায়
         elif redirected and response.status_code == 200:
-            # শুধু স্লাশ বা http/https এর পরিবর্তন হলে সেটাকে রিডাইরেক্ট ধরবে না
             orig_clean = url.replace('http://', '').replace('https://', '').replace('www.', '').split('/')[0]
             final_clean = response.url.replace('http://', '').replace('https://', '').replace('www.', '').split('/')[0]
             
@@ -82,7 +85,6 @@ def start_process():
     results = [r for r in results if r is not None]
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # রিপোর্ট ফাইল তৈরি (Final_URL কলামসহ)
     with open(PROBLEM_REPORT, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(["Exact_URL_from_List", "Status_Code", "Issue_Type", "Final_URL", "Checked_At"])
@@ -91,7 +93,11 @@ def start_process():
                 writer.writerow([url, code, status, final_u, now])
 
     success_count = sum(1 for _, _, s, _ in results if s == "Success")
-    suspended_count = sum(1 for _, _, s, _ in results if s == "Suspended")
+    suspended_count = sum(1 for _, _, s, _ in results if "Suspended" in s or "Host_Error" in s for _, _, s, _ in [r] if "Suspended" in s or "Host_Error" in s) # safety match
+    
+    # কাউন্টারের সহজ হিসাব
+    success_count = sum(1 for _, _, s, _ in results if s == "Success")
+    suspended_count = sum(1 for _, _, s, _ in results if s in ["Suspended", "Host_Error/Suspended"])
     redirect_count = sum(1 for _, _, s, _ in results if s == "Redirected")
     failed_count = len(results) - (success_count + suspended_count + redirect_count)
 
