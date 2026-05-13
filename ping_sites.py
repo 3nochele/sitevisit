@@ -9,9 +9,9 @@ from concurrent.futures import ThreadPoolExecutor
 SITES_FILE = 'sites.txt'
 SUMMARY_REPORT = 'report.csv'
 PROBLEM_REPORT = 'detailed_status.csv'
-MAX_WORKERS = 3 
+MAX_WORKERS = 4 
 
-SUB_PAGES = ['', '/about-us', '/contact-us']
+SUB_PAGES = ['', '/about-us', '/contact-us', '/privacy-policy']
 
 def is_valid_url(url):
     if '.' not in url or ' ' in url or '↑' in url:
@@ -26,48 +26,98 @@ def ping_url(original_url):
         return None
 
     if not url.startswith('http'):
-        formatted_url = 'http://' + url
+        base_url = 'http://' + url
     else:
-        formatted_url = url
+        base_url = url
         
-    if formatted_url.endswith('/'):
-        formatted_url = formatted_url[:-1]
+    if base_url.endswith('/'):
+        base_url = base_url[:-1]
     
-    target_url = f"{formatted_url}{random.choice(SUB_PAGES)}"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
+    # 💥 Magic Trick: গুগল বট সেজে ইনফিনিটি ফ্রির সিকিউরিটি বাইপাস করা
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5'
+    }
     
-    time.sleep(random.uniform(2, 5)) 
+    session = requests.Session()
+    session.headers.update(headers)
+    
+    suspend_urls = ["suspended-domain.net", "suspendedpage", "epizy.com/suspended"]
+    
+    strict_error_phrases = [
+        "this domain has been suspended",
+        "reaching server limits",
+        "contact support in your hosting control panel",
+        "account has been suspended", 
+        "this site is under construction", 
+        "default web site page", 
+        "suspended-domain.net",
+        "site is sleeping"
+    ]
+
+    # সিকিউরিটি দেওয়ালের সিগনেচার
+    js_challenge_phrases = [
+        "aes.js",
+        "this site requires javascript to work",
+        "checking your browser"
+    ]
     
     try:
-        response = requests.get(target_url, headers=headers, timeout=20, allow_redirects=True)
-        final_url = response.url.lower()
-        page_content = response.text.lower() # পেজের ভেতরের HTML লেখা পড়া
+        time.sleep(random.uniform(1, 3))
+        response1 = session.get(base_url, timeout=15, allow_redirects=True)
         
-        history = response.history
+        final_url1 = response1.url.lower()
+        page_content1 = response1.text.lower()
+        
+        if any(url_part in final_url1 for url_part in suspend_urls):
+            return original_url, response1.status_code, "Suspended", response1.url
+            
+        if any(phrase in page_content1 for phrase in strict_error_phrases):
+            return original_url, response1.status_code, "Suspended/Host_Error", response1.url
+            
+        # যদি গুগল বট হওয়ার পরও সে সিকিউরিটি পেজ দেয়
+        if any(phrase in page_content1 for phrase in js_challenge_phrases):
+            return original_url, response1.status_code, "Blocked_by_Security", response1.url
+            
+        chosen_sub = random.choice(SUB_PAGES)
+        if not chosen_sub:
+            response2 = response1
+            final_url2 = final_url1
+            page_content2 = page_content1
+        else:
+            target_url = f"{base_url}{chosen_sub}"
+            time.sleep(random.uniform(2, 4))
+            session.headers.update({'Referer': response1.url})
+            response2 = session.get(target_url, timeout=15, allow_redirects=True)
+            final_url2 = response2.url.lower()
+            page_content2 = response2.text.lower()
+        
+        if any(url_part in final_url2 for url_part in suspend_urls):
+            return original_url, response2.status_code, "Suspended", response2.url
+            
+        if any(phrase in page_content2 for phrase in strict_error_phrases):
+            return original_url, response2.status_code, "Suspended/Host_Error", response2.url
+            
+        if any(phrase in page_content2 for phrase in js_challenge_phrases):
+            return original_url, response2.status_code, "Blocked_by_Security", response2.url
+            
+        history = response2.history
         redirected = len(history) > 0
         
-        # ১. URL অথবা পেজের ভেতরের টেক্সটে Suspended নোটিশ আছে কি না চেক
-        if "suspended" in final_url or "limit" in final_url or "notify" in final_url or "suspended" in page_content or "account has been suspended" in page_content:
-            return original_url, response.status_code, "Suspended", response.url
-            
-        # ২. ফ্রি হোস্টের (InfinityFree/iFastNet) ফেক সাকসেস বা হোল্ডিং পেজ চেক
-        elif "infinityfree" in page_content or "ifastnet" in page_content or "__test" in page_content or "checking your browser" in page_content:
-            return original_url, response.status_code, "Host_Error/Suspended", response.url
-        
-        # ৩. যদি সাকসেসফুল হয় (Status 200) কিন্তু রিডাইরেক্ট হয়ে অন্য ডোমেইনে চলে যায়
-        elif redirected and response.status_code == 200:
+        if redirected and response2.status_code == 200:
             orig_clean = url.replace('http://', '').replace('https://', '').replace('www.', '').split('/')[0]
-            final_clean = response.url.replace('http://', '').replace('https://', '').replace('www.', '').split('/')[0]
+            final_clean = response2.url.replace('http://', '').replace('https://', '').replace('www.', '').split('/')[0]
             
             if orig_clean != final_clean:
-                return original_url, response.status_code, "Redirected", response.url
+                return original_url, response2.status_code, "Redirected", response2.url
             else:
-                return original_url, response.status_code, "Success", response.url
+                return original_url, response2.status_code, "Success", response2.url
         
-        elif response.status_code == 200:
-            return original_url, response.status_code, "Success", response.url
+        if response2.status_code == 200:
+            return original_url, response2.status_code, "Success", response2.url
         else:
-            return original_url, response.status_code, f"Error_{response.status_code}", response.url
+            return original_url, response2.status_code, f"Error_{response2.status_code}", response2.url
             
     except Exception:
         return original_url, 0, "Invalid/Down", "N/A"
@@ -93,11 +143,7 @@ def start_process():
                 writer.writerow([url, code, status, final_u, now])
 
     success_count = sum(1 for _, _, s, _ in results if s == "Success")
-    suspended_count = sum(1 for _, _, s, _ in results if "Suspended" in s or "Host_Error" in s for _, _, s, _ in [r] if "Suspended" in s or "Host_Error" in s) # safety match
-    
-    # কাউন্টারের সহজ হিসাব
-    success_count = sum(1 for _, _, s, _ in results if s == "Success")
-    suspended_count = sum(1 for _, _, s, _ in results if s in ["Suspended", "Host_Error/Suspended"])
+    suspended_count = sum(1 for _, _, s, _ in results if "Suspended" in s)
     redirect_count = sum(1 for _, _, s, _ in results if s == "Redirected")
     failed_count = len(results) - (success_count + suspended_count + redirect_count)
 
